@@ -134,14 +134,13 @@ async def health_check():
     prediction_service = get_prediction_service()
 
     return {
-        "status": "healthy",
-        "models": prediction_service.get_model_info(),
-        "config": {
-            "parallel_workers": settings.optimization.get("parallel", {}).get("max_workers", 4),
-            "vehicle_capacity": settings.optimization.get("routing", {}).get("vehicle_capacity", 1000)
-        }
+    "status": "healthy",
+    "models": prediction_service.get_model_info(),
+    "config": {
+        "parallel_workers": settings.optimization.parallel.get('max_workers', 4),
+        "vehicle_capacity": settings.optimization.routing.get('vehicle_capacity', 1000)
     }
-
+}
 # ==================== PREDICTIONS ====================
 
 @app.post("/api/v1/predict/supplier", tags=["Predictions"])

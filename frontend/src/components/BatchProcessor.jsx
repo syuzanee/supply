@@ -137,7 +137,7 @@ function BatchProcessor() {
                     <tr key={supplier.id}>
                       <td><strong>{supplier.name}</strong></td>
                       <td>{supplier.lead_time} days</td>
-                      <td>${supplier.cost.toFixed(2)}</td>
+                      <td>${(supplier.cost ?? 0).toFixed(2)}</td>
                       <td>{supplier.past_orders}</td>
                       <td>
                         <button
@@ -215,7 +215,7 @@ function BatchProcessor() {
                 <div className="summary-stat">
                   <div className="stat-icon">⚡</div>
                   <div className="stat-info">
-                    <h4>{results.processing_time_seconds.toFixed(2)}s</h4>
+                    <h4>{(results.processing_time_seconds ?? 0).toFixed(2)}s</h4>
                     <p>Processing Time</p>
                   </div>
                 </div>
@@ -242,8 +242,8 @@ function BatchProcessor() {
                             {result.reliability_label}
                           </span>
                         </td>
-                        <td>{(result.confidence * 100).toFixed(1)}%</td>
-                        <td>{(result.probability_reliable * 100).toFixed(1)}%</td>
+                        <td>{((result.confidence ?? 0) * 100).toFixed(1)}%</td>
+                        <td>{((result.probability_reliable ?? 0) * 100).toFixed(1)}%</td>
                         <td>
                           <small>
                             LT: {result.input.lead_time}d | 

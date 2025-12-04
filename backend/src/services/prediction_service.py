@@ -120,7 +120,7 @@ class PredictionService:
                 'loaded_at': datetime.now().isoformat()
             }
             
-            self.logger.info(f"✓ Loaded {model_name} model ({config['type']})")
+            self.logger.info(f" Loaded {model_name} model ({config['type']})")
             
         except Exception as e:
             self.logger.error(f"Error loading {model_name} model: {e}")
@@ -153,8 +153,9 @@ class PredictionService:
         try:
             model = self.models['supplier']
             
-            # Prepare features
-            X = np.array([[input_data.lead_time, input_data.cost, input_data.past_orders]])
+            # Prepare features with column names
+            features = self.model_metadata['supplier'].get('features', ['lead_time', 'cost', 'past_orders'])
+            X = pd.DataFrame([[input_data.lead_time, input_data.cost, input_data.past_orders]], columns=features)
             
             # Make prediction
             prediction = int(model.predict(X)[0])
@@ -270,12 +271,13 @@ class PredictionService:
         try:
             model = self.models['shipment']
             
-            # Prepare features
-            X = np.array([[
+            # Prepare features with column names
+            features = self.model_metadata['shipment'].get('features', ['delivery_time', 'quantity', 'delay_time'])
+            X = pd.DataFrame([[
                 input_data.delivery_time,
                 input_data.quantity,
                 input_data.delay_time
-            ]])
+            ]], columns=features)
             
             # Make prediction
             prediction = int(model.predict(X)[0])

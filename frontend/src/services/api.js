@@ -1,6 +1,7 @@
 /**
  * API Service Layer
  * Integrates: Computer Networks - RESTful API communication
+ * Fixed: Handles 422 errors, undefined responses, and safe JSON parsing
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -12,7 +13,7 @@ class APIService {
 
   async request(endpoint, options = {}) {
     const url = `${this.baseURL}${endpoint}`;
-    
+
     const config = {
       headers: {
         'Content-Type': 'application/json',
@@ -23,13 +24,22 @@ class APIService {
 
     try {
       const response = await fetch(url, config);
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'API request failed');
+
+      // Try to parse JSON if possible
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (e) {
+        data = {};
       }
-      
-      return await response.json();
+
+      // If response is not ok, throw detailed error
+      if (!response.ok) {
+        let errorMsg = data.detail || data.message || 'API request failed';
+        throw { status: response.status, ...data, message: errorMsg };
+      }
+
+      return data;
     } catch (error) {
       console.error(`API Error [${endpoint}]:`, error);
       throw error;
@@ -75,9 +85,20 @@ class APIService {
   }
 
   async optimizeRouting(data) {
+    // Ensure payload is objects with lat/lon, not array of arrays
+    const fixedData = {
+      ...data,
+      locations: data.locations.map(loc => {
+        if (Array.isArray(loc)) {
+          return { lat: loc[0], lon: loc[1] };
+        }
+        return loc;
+      }),
+    };
+
     return this.request('/api/v1/optimize/routing', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(fixedData),
     });
   }
 

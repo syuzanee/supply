@@ -1,5 +1,4 @@
 // frontend/src/components/VehicleRouter.jsx
-
 import { useState } from 'react';
 import api from '../services/api';
 import './VehicleRouter.css';
@@ -10,30 +9,34 @@ function VehicleRouter() {
     { id: 2, lat: 34.0522, lon: -118.2437, name: 'Los Angeles' },
     { id: 3, lat: 41.8781, lon: -87.6298, name: 'Chicago' }
   ]);
+
   const [newLocation, setNewLocation] = useState({ lat: '', lon: '', name: '' });
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Add a new location to the list
   const addLocation = () => {
-    if (newLocation.lat && newLocation.lon && newLocation.name) {
-      setLocations([
-        ...locations,
-        {
-          id: Date.now(),
-          lat: parseFloat(newLocation.lat),
-          lon: parseFloat(newLocation.lon),
-          name: newLocation.name
-        }
-      ]);
-      setNewLocation({ lat: '', lon: '', name: '' });
-    }
+    if (!newLocation.lat || !newLocation.lon || !newLocation.name) return;
+
+    setLocations([
+      ...locations,
+      {
+        id: Date.now(),
+        lat: parseFloat(newLocation.lat),
+        lon: parseFloat(newLocation.lon),
+        name: newLocation.name
+      }
+    ]);
+    setNewLocation({ lat: '', lon: '', name: '' });
   };
 
+  // Remove a location
   const removeLocation = (id) => {
     setLocations(locations.filter(loc => loc.id !== id));
   };
 
+  // Optimize route using backend API
   const handleOptimize = async () => {
     if (locations.length < 2) {
       setError('Please add at least 2 locations');
@@ -44,17 +47,46 @@ function VehicleRouter() {
     setError(null);
 
     try {
+      // Prepare payload with all necessary fields
       const routeData = {
         locations: locations.map(loc => ({
+          id: loc.id,
+          name: loc.name,
           lat: loc.lat,
-          lon: loc.lon,
-          name: loc.name
-        }))
+          lon: loc.lon
+        })),
+        start_index: 0
       };
+
+      console.log('Sending routing data:', JSON.stringify(routeData, null, 2));
+
       const optimization = await api.optimizeRouting(routeData);
+
+      // Map route_order indices to location objects
+      if (optimization.route_order && Array.isArray(optimization.route_order)) {
+        optimization.route_order = optimization.route_order.map(index => locations.find(loc => loc.id === index) || {});
+      }
+
       setResult(optimization);
     } catch (err) {
-      setError(err.message);
+      console.error('Full error:', err);
+
+      let errorMessage = 'An unknown error occurred';
+
+      // Handle structured backend error with `detail`
+      if (err?.detail) {
+        if (Array.isArray(err.detail)) {
+          errorMessage = err.detail
+            .map(e => `${(e.loc || []).join('.')} - ${e.msg || 'Unknown error'}`)
+            .join('\n');
+        } else {
+          errorMessage = err.detail;
+        }
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -71,31 +103,28 @@ function VehicleRouter() {
         {/* Location Input */}
         <div className="input-section">
           <h3>Delivery Locations</h3>
-          
           <div className="location-input">
             <input
               type="number"
               placeholder="Latitude"
               value={newLocation.lat}
-              onChange={(e) => setNewLocation({...newLocation, lat: e.target.value})}
+              onChange={e => setNewLocation({ ...newLocation, lat: e.target.value })}
               step="0.0001"
             />
             <input
               type="number"
               placeholder="Longitude"
               value={newLocation.lon}
-              onChange={(e) => setNewLocation({...newLocation, lon: e.target.value})}
+              onChange={e => setNewLocation({ ...newLocation, lon: e.target.value })}
               step="0.0001"
             />
             <input
               type="text"
               placeholder="Location Name"
               value={newLocation.name}
-              onChange={(e) => setNewLocation({...newLocation, name: e.target.value})}
+              onChange={e => setNewLocation({ ...newLocation, name: e.target.value })}
             />
-            <button onClick={addLocation} className="btn-add">
-              ➕ Add
-            </button>
+            <button onClick={addLocation} className="btn-add">➕ Add</button>
           </div>
 
           <div className="locations-list">
@@ -104,19 +133,14 @@ function VehicleRouter() {
                 <span className="location-number">{index + 1}</span>
                 <div className="location-info">
                   <strong>{loc.name}</strong>
-                  <small>({loc.lat.toFixed(4)}, {loc.lon.toFixed(4)})</small>
+                  <small>({loc.lat?.toFixed(4) ?? 'N/A'}, {loc.lon?.toFixed(4) ?? 'N/A'})</small>
                 </div>
-                <button 
-                  onClick={() => removeLocation(loc.id)}
-                  className="btn-remove"
-                >
-                  ✕
-                </button>
+                <button onClick={() => removeLocation(loc.id)} className="btn-remove">✕</button>
               </div>
             ))}
           </div>
 
-          <button 
+          <button
             onClick={handleOptimize}
             disabled={loading || locations.length < 2}
             className="btn-primary"
@@ -137,7 +161,7 @@ function VehicleRouter() {
           {error && (
             <div className="error-state">
               <h3>❌ Error</h3>
-              <p>{error}</p>
+              <pre style={{ whiteSpace: 'pre-wrap', textAlign: 'left' }}>{error}</pre>
             </div>
           )}
 
@@ -149,23 +173,21 @@ function VehicleRouter() {
                 <div className="summary-card">
                   <div className="summary-icon">📏</div>
                   <div className="summary-content">
-                    <h4>{result.total_distance.toFixed(2)} km</h4>
+                    <h4>{(result.total_distance ?? 0).toFixed(2)} km</h4>
                     <p>Total Distance</p>
                   </div>
                 </div>
-
                 <div className="summary-card">
                   <div className="summary-icon">📍</div>
                   <div className="summary-content">
-                    <h4>{result.route_order.length}</h4>
+                    <h4>{result.route_order?.length ?? 0}</h4>
                     <p>Stops</p>
                   </div>
                 </div>
-
                 <div className="summary-card">
                   <div className="summary-icon">🎯</div>
                   <div className="summary-content">
-                    <h4>{result.algorithm}</h4>
+                    <h4>{result.algorithm ?? 'N/A'}</h4>
                     <p>Algorithm</p>
                   </div>
                 </div>
@@ -174,33 +196,33 @@ function VehicleRouter() {
               <div className="route-visualization">
                 <h4>Route Order</h4>
                 <div className="route-path">
-                  {result.route_order.map((stop, index) => (
-                    <div key={index} className="route-stop">
-                      <div className="stop-marker">{index + 1}</div>
-                      <div className="stop-info">
-                        <strong>{stop.name}</strong>
-                        <small>({stop.lat.toFixed(4)}, {stop.lon.toFixed(4)})</small>
+                  {result.route_order?.length ? (
+                    result.route_order.map((stop, index) => (
+                      <div key={index} className="route-stop">
+                        <div className="stop-marker">{index + 1}</div>
+                        <div className="stop-info">
+                          <strong>{stop.name}</strong>
+                          <small>({stop.lat?.toFixed(4) ?? 'N/A'}, {stop.lon?.toFixed(4) ?? 'N/A'})</small>
+                        </div>
+                        {index < result.route_order.length - 1 && <div className="route-arrow">→</div>}
                       </div>
-                      {index < result.route_order.length - 1 && (
-                        <div className="route-arrow">→</div>
-                      )}
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <p>No route order available</p>
+                  )}
                 </div>
               </div>
 
-              {result.segment_distances && (
+              {result.segment_distances?.length && (
                 <div className="segment-details">
                   <h4>Segment Distances</h4>
                   <div className="segments-list">
                     {result.segment_distances.map((segment, index) => (
                       <div key={index} className="segment-item">
                         <span className="segment-route">
-                          {result.route_order[index].name} → {result.route_order[index + 1].name}
+                          {result.route_order?.[index]?.name ?? 'N/A'} → {result.route_order?.[index + 1]?.name ?? 'N/A'}
                         </span>
-                        <span className="segment-distance">
-                          {segment.toFixed(2)} km
-                        </span>
+                        <span className="segment-distance">{(segment ?? 0).toFixed(2)} km</span>
                       </div>
                     ))}
                   </div>

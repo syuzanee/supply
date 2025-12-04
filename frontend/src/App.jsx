@@ -7,6 +7,37 @@ import VehicleRouter from './components/VehicleRouter';
 import BatchProcessor from './components/BatchProcessor';
 import api from './services/api';
 import './App.css';
+import React from 'react';
+
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("Error caught in ErrorBoundary:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="error-state">
+          <h2>⚠️ Something went wrong</h2>
+          <p>{this.state.error?.message || 'An unexpected error occurred'}</p>
+          <button onClick={() => this.setState({ hasError: false, error: null })}>
+            🔄 Try again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -95,7 +126,9 @@ function App() {
             </button>
           </div>
         ) : (
-          <ActiveComponent apiStatus={apiStatus} />
+          <ErrorBoundary>
+            <ActiveComponent apiStatus={apiStatus} />
+          </ErrorBoundary>
         )}
       </main>
 
