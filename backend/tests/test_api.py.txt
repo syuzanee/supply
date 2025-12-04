@@ -1,0 +1,73 @@
+"""
+API integration tests
+Integrates: Computer Networks - API testing
+"""
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app import app
+
+client = TestClient(app)
+
+
+class TestAPIEndpoints:
+    """Test API endpoints"""
+    
+    def test_root_endpoint(self):
+        """Test root health check"""
+        response = client.get("/")
+        assert response.status_code == 200
+        assert "status" in response.json()
+        assert response.json()["status"] == "online"
+    
+    def test_supplier_prediction_endpoint(self):
+        """Test supplier prediction endpoint"""
+        data = {
+            "lead_time": 7,
+            "cost": 50.0,
+            "past_orders": 100
+        }
+        response = client.post("/predict/supplier", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        assert "reliability" in result
+        assert "confidence" in result
+    
+    def test_supplier_prediction_invalid_input(self):
+        """Test supplier prediction with invalid input"""
+        data = {
+            "lead_time": -5,
+            "cost": 50.0,
+            "past_orders": 100
+        }
+        response = client.post("/predict/supplier", json=data)
+        assert response.status_code == 422  # Validation error
+    
+    def test_inventory_forecast_endpoint(self):
+        """Test inventory forecast endpoint"""
+        response = client.get("/predict/inventory?steps=5")
+        assert response.status_code == 200
+        result = response.json()
+        assert "forecast" in result
+        assert len(result["forecast"]) == 5
+    
+    def test_shipment_prediction_endpoint(self):
+        """Test shipment delay prediction"""
+        data = {
+            "delivery_time": 10,
+            "quantity": 500,
+            "delay_time": 2
+        }
+        response = client.post("/predict/shipment", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        assert "delayed" in result
+        assert "status" in result
+    
+    def test_model_info_endpoint(self):
+        """Test model info endpoint"""
+        response = client.get("/models/info")
+        assert response.status_code == 200
+        result = response.json()
+        assert "loaded_models" in result

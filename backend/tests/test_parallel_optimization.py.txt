@@ -1,0 +1,87 @@
+"""
+Tests for parallel optimization
+Integrates: Parallel Programming - Testing multi-threading
+"""
+
+import pytest
+import time
+
+from src.optimization.parallel_optimizer import ParallelOptimizer
+
+
+class TestParallelOptimizer:
+    """Test suite for parallel optimization"""
+    
+    def test_parallel_map_basic(self, parallel_optimizer):
+        """Test basic parallel map operation"""
+        def square(x):
+            return x ** 2
+        
+        items = list(range(100))
+        results = parallel_optimizer.parallel_map(square, items)
+        
+        assert len(results) == 100
+        assert results[5] == 25
+        assert results[10] == 100
+    
+    def test_parallel_map_performance(self, parallel_optimizer):
+        """Test that parallel processing is faster"""
+        def slow_operation(x):
+            time.sleep(0.01)
+            return x * 2
+        
+        items = list(range(20))
+        
+        # Sequential
+        start = time.time()
+        sequential = [slow_operation(x) for x in items]
+        seq_time = time.time() - start
+        
+        # Parallel
+        start = time.time()
+        parallel = parallel_optimizer.parallel_map(slow_operation, items)
+        par_time = time.time() - start
+        
+        assert parallel == sequential
+        assert par_time < seq_time  # Parallel should be faster
+    
+    def test_parallel_batch_optimize(self, parallel_optimizer):
+        """Test batch optimization"""
+        def optimize_batch(batch):
+            return {
+                'sum': sum(batch['data']),
+                'mean': sum(batch['data']) / len(batch['data'])
+            }
+        
+        batches = [
+            {'data': [1, 2, 3]},
+            {'data': [4, 5, 6]},
+            {'data': [7, 8, 9]}
+        ]
+        
+        results = parallel_optimizer.parallel_batch_optimize(optimize_batch, batches)
+        
+        assert len(results) == 3
+        assert all(r['status'] == 'success' for r in results)
+    
+    def test_monte_carlo_simulation(self, parallel_optimizer):
+        """Test parallel Monte Carlo simulation"""
+        def simulation(params):
+            import numpy as np
+            np.random.seed(params['seed'])
+            samples = np.random.normal(params['mean'], params['std'], 1000)
+            return {
+                'mean': float(np.mean(samples)),
+                'std': float(np.std(samples))
+            }
+        
+        params = {'mean': 100, 'std': 15}
+        result = parallel_optimizer.parallel_monte_carlo_simulation(
+            simulation,
+            num_simulations=10,
+            params=params
+        )
+        
+        assert 'num_simulations' in result
+        assert 'metrics' in result
+        assert result['num_simulations'] == 10

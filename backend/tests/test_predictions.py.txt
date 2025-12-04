@@ -1,0 +1,146 @@
+"""
+Tests for prediction services
+Integrates: Software Engineering - Unit testing, Artificial Intelligence validation
+"""
+
+import pytest
+import numpy as np
+
+from src.services.prediction_service import PredictionService, get_prediction_service
+from src.core.exceptions import ModelNotLoadedError, PredictionError, ValidationError
+from src.utils.validators import SupplierInputValidator
+
+
+class TestPredictionService:
+    """Test suite for PredictionService"""
+    
+    def test_singleton_pattern(self):
+        """Test that PredictionService is a singleton"""
+        service1 = get_prediction_service()
+        service2 = get_prediction_service()
+        assert service1 is service2
+    
+    def test_supplier_prediction_valid_input(self, prediction_service):
+        """Test supplier prediction with valid input"""
+        result = prediction_service.predict_supplier_reliability(
+            lead_time=7,
+            cost=50.0,
+            past_orders=100
+        )
+        
+        assert 'reliability' in result
+        assert result['reliability'] in [0, 1]
+        assert 'confidence' in result
+        assert 0 <= result['confidence'] <= 1
+        assert 'probability_reliable' in result
+        assert 'probability_unreliable' in result
+        assert result['model'] == 'RandomForestClassifier'
+    
+    def test_supplier_prediction_invalid_lead_time(self, prediction_service):
+        """Test supplier prediction with invalid lead time"""
+        with pytest.raises(ValidationError):
+            prediction_service.predict_supplier_reliability(
+                lead_time=-5,
+                cost=50.0,
+                past_orders=100
+            )
+    
+    def test_supplier_prediction_invalid_cost(self, prediction_service):
+        """Test supplier prediction with invalid cost"""
+        with pytest.raises(ValidationError):
+            prediction_service.predict_supplier_reliability(
+                lead_time=7,
+                cost=-10.0,
+                past_orders=100
+            )
+    
+    def test_inventory_forecast_default_params(self, prediction_service):
+        """Test inventory forecasting with default parameters"""
+        result = prediction_service.forecast_inventory()
+        
+        assert 'forecast' in result
+        assert len(result['forecast']) == 5  # default steps
+        assert 'lower_bound' in result
+        assert 'upper_bound' in result
+        assert result['model'] == 'ARIMA'
+    
+    def test_inventory_forecast_custom_steps(self, prediction_service):
+        """Test inventory forecasting with custom steps"""
+        result = prediction_service.forecast_inventory(steps=10)
+        
+        assert len(result['forecast']) == 10
+        assert 'statistics' in result
+        assert 'mean' in result['statistics']
+    
+    def test_shipment_delay_prediction(self, prediction_service):
+        """Test shipment delay prediction"""
+        result = prediction_service.predict_shipment_delay(
+            delivery_time=10,
+            quantity=500,
+            delay_time=2
+        )
+        
+        assert 'delayed' in result
+        assert result['delayed'] in [0, 1]
+        assert 'status' in result
+        assert result['status'] in ['Delayed', 'On Time']
+        assert 'risk_level' in result
+        assert result['risk_level'] in ['Low', 'Medium', 'High']
+    
+    def test_get_model_info(self, prediction_service):
+        """Test getting model information"""
+        info = prediction_service.get_model_info()
+        
+        assert 'loaded_models' in info
+        assert 'model_count' in info
+        assert 'metadata' in info
+        assert isinstance(info['loaded_models'], list)
+
+
+class TestInputValidators:
+    """Test input validation"""
+    
+    def test_supplier_validator_valid(self):
+        """Test valid supplier input"""
+        validator = SupplierInputValidator(
+            lead_time=7,
+            cost=50.0,
+            past_orders=100
+        )
+        assert validator.lead_time == 7
+        assert validator.cost == 50.0
+        assert validator.past_orders == 100
+    
+    def test_supplier_validator_edge_cases(self):
+        """Test edge cases for supplier validation"""
+        # Minimum values
+        validator = SupplierInputValidator(
+            lead_time=1,
+            cost=0.01,
+            past_orders=0
+        )
+        assert validator.lead_time == 1
+        
+        # Maximum lead time
+        validator = SupplierInputValidator(
+            lead_time=365,
+            cost=50.0,
+            past_orders=1000
+        )
+        assert validator.lead_time == 365
+    
+    def test_supplier_validator_invalid_lead_time(self):
+        """Test invalid lead time"""
+        with pytest.raises(ValidationError):
+            SupplierInputValidator(
+                lead_time=0,
+                cost=50.0,
+                past_orders=100
+            )
+        
+        with pytest.raises(ValidationError):
+            SupplierInputValidator(
+                lead_time=400,
+                cost=50.0,
+                past_orders=100
+            )

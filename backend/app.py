@@ -1,124 +1,299 @@
-from fastapi import FastAPI
-import pickle
-import pandas as pd
-from fpdf import FPDF
+"""
+Enhanced FastAPI Application
+Integrates:
+- Computer Networks: RESTful API design
+- Software Engineering: Layered architecture
+- All optimization services
+"""
 
-app = FastAPI()
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
+import uvicorn
 
-# Load Models
-supplier_model = pickle.load(open("models/supplier_model.pkl", "rb"))
-inventory_model = pickle.load(open("models/inventory_model.pkl", "rb"))
-shipment_model = pickle.load(open("models/shipment_model.pkl", "rb"))
+from src.services.prediction_service import get_prediction_service
+from src.optimization.inventory_optimizer import InventoryOptimizer
+from src.optimization.vehicle_routing import VehicleRoutingOptimizer
+from src.optimization.parallel_optimizer import ParallelOptimizer
+from src.core.logger import get_logger
+from src.core.config import settings
+from src.core.exceptions import SupplyChainException
 
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to the AI-Powered Supply Chain Dashboard Backend"}
+logger = get_logger(__name__)
 
-# Supplier Reliability Prediction
-@app.post("/predict/supplier/")
-def predict_supplier(lead_time: float, cost: float, past_orders: int):
-    input_data = [[lead_time, cost, past_orders]]
-    prediction = supplier_model.predict(input_data)
-    return {"predicted_reliability": int(prediction[0])}
+app = FastAPI(
+    title="Supply Chain Optimization API",
+    description="Advanced supply chain optimization with ML and graph algorithms",
+    version="2.0.0"
+)
 
-# Inventory Demand Forecast
-@app.post("/predict/inventory/")
-def predict_inventory():
-    prediction = inventory_model.forecast(steps=7)  # Next 7 days
-    return {"inventory_forecast": prediction.tolist()}
+# ==================== CORS CONFIG ====================
 
-# Shipment Delay Prediction
-@app.post("/predict/shipment/")
-def predict_shipment(delay_time: float):
-    prediction = shipment_model.predict([[delay_time]])
-    return {"predicted_delay": bool(prediction[0])}
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.security.get("cors_origins", ["*"]),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Generate PDF Report
-@app.get("/generate-report/")
-class SupplyChainReport(FPDF):
-    def header(self):
-        self.set_font('Arial', 'B', 14)
-        self.cell(0, 10, 'Supply Chain Optimization Dashboard Report', ln=True, align='C')
-        self.ln(10)
+# ==================== MODELS ====================
 
-    def footer(self):
-        self.set_y(-15)
-        self.set_font('Arial', 'I', 8)
-        self.cell(0, 10, f'Page {self.page_no()}', align='C')
+class SupplierInput(BaseModel):
+    lead_time: int = Field(..., ge=1, le=365)
+    cost: float = Field(..., gt=0)
+    past_orders: int = Field(..., ge=0)
 
-    def add_section(self, title):
-        self.set_font('Arial', 'B', 12)
-        self.cell(0, 10, title, ln=True, align='L')
-        self.ln(5)
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "lead_time": 7,
+                "cost": 50.0,
+                "past_orders": 100
+            }
+        }
 
-    def add_metric(self, label, value, trend=None):
-        self.set_font('Arial', '', 12)
-        self.cell(0, 10, f'{label}: {value} {trend if trend else ""}', ln=True, align='L')
 
-    def add_table(self, table_data, column_widths, headers):
-        self.set_font('Arial', 'B', 12)
-        for header, width in zip(headers, column_widths):
-            self.cell(width, 10, header, border=1, align='C')
-        self.ln()
-        self.set_font('Arial', '', 12)
-        for row in table_data:
-            for value, width in zip(row, column_widths):
-                self.cell(width, 10, str(value), border=1, align='C')
-            self.ln()
+class ShipmentInput(BaseModel):
+    delivery_time: int = Field(..., ge=1)
+    quantity: int = Field(..., ge=1)
+    delay_time: int = Field(..., ge=0)
 
-def generate_report():
-    pdf = SupplyChainReport()
-    pdf.add_page()
 
-    # Add Introduction Section
-    pdf.add_section('Overview')
-    pdf.set_font('Arial', '', 12)
-    pdf.multi_cell(0, 10, (
-        "This report summarizes key performance metrics, predictive insights, "
-        "and supply chain optimization data for the observed period. "
-        "It combines AI-powered forecasts with real-time data to assist decision-makers in improving efficiency."
-    ))
-    pdf.ln(10)
+class InventoryOptimizationInput(BaseModel):
+    annual_demand: float = Field(..., gt=0)
+    unit_cost: float = Field(..., gt=0)
+    demand_std: float = Field(..., ge=0)
+    lead_time_days: int = Field(..., ge=1)
 
-    # Add Key Metrics
-    pdf.add_section('Key Metrics')
-    pdf.add_metric('Order Fulfillment Rate', '91.3%', trend='(+5.9%)')
-    pdf.add_metric('Inventory Turnover', '5.21', trend='(-6.7%)')
-    pdf.add_metric('Supplier Reliability', '91.2%', trend='(+3.2%)')
-    pdf.add_metric('Cost Efficiency', '87.1%', trend='(-6.7%)')
-    pdf.ln(10)
 
-    # Add Supplier Performance
-    pdf.add_section('Supplier Performance')
-    table_data = [
-        ['TechComponents Inc', 'San Francisco, CA', '95.0%', '5 days', '$120'],
-        ['Global Parts Ltd', 'Shanghai, China', '88.0%', '8 days', '$95'],
-        ['EuroSupply GmbH', 'Munich, Germany', '92.0%', '7 days', '$110'],
-        ['Pacific Logistics', 'Singapore', '89.0%', '6 days', '$105'],
-    ]
-    pdf.add_table(table_data, [50, 50, 30, 30, 30], ['Supplier', 'Location', 'Reliability', 'Lead Time', 'Cost/Unit'])
-    pdf.ln(10)
+class LocationInput(BaseModel):
+    lat: float = Field(..., ge=-90, le=90)
+    lon: float = Field(..., ge=-180, le=180)
+    name: Optional[str] = "Location"
+    demand: Optional[float] = 0.0
 
-    # Add Shipment Tracking
-    pdf.add_section('Shipment Tracking')
-    shipment_data = [
-        ['San Francisco, CA -> Austin, TX', 'In-transit', '2024-03-25'],
-        ['Shanghai, China -> Los Angeles, CA', 'Delayed', '2024-03-22 (Delayed by 2 days)'],
-        ['Munich, Germany -> Paris, France', 'Delivered', '2024-03-20'],
-    ]
-    pdf.add_table(shipment_data, [90, 50, 50], ['Route', 'Status', 'ETA'])
-    pdf.ln(10)
 
-    # Add Predictive Insights
-    pdf.add_section('Predictive Insights')
-    pdf.add_metric('Predicted Inventory Demand (Next 7 Days)', '450, 460, 475, 480, 490, 500, 520')
-    pdf.add_metric('Potential Shipment Delays', 'Shanghai -> Los Angeles (High risk of delay)')
-    pdf.add_metric('Supplier Risk Alert', 'Global Parts Ltd (88.0% reliability) flagged for review.')
-    pdf.ln(10)
+class RoutingInput(BaseModel):
+    depot: LocationInput
+    customers: List[LocationInput]
+    algorithm: Optional[str] = "clarke_wright"
 
-    # Save the Report
-    pdf.output('SupplyChainReport.pdf')
-    print("Report generated: 'SupplyChainReport.pdf'")
+# ==================== STARTUP/SHUTDOWN ====================
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("=" * 60)
+    logger.info("SUPPLY CHAIN OPTIMIZATION API STARTING")
+    logger.info("=" * 60)
+
+    try:
+        prediction_service = get_prediction_service()
+        logger.info("Prediction service initialized")   # FIXED — ASCII ONLY
+
+        logger.info("=" * 60)
+        logger.info("API READY")
+        logger.info(f"Environment: {settings.app.get('environment', 'development')}")
+        logger.info(f"Version: {settings.app.get('version', '2.0.0')}")
+        logger.info("=" * 60)
+
+    except Exception as e:
+        logger.error(f"Startup failed: {e}")
+        raise
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("API shutting down...")
+
+# ==================== HEALTH ENDPOINTS ====================
+
+@app.get("/", tags=["Health"])
+async def root():
+    prediction_service = get_prediction_service()
+    model_info = prediction_service.get_model_info()
+
+    return {
+        "status": "online",
+        "message": "Supply Chain Optimization API v2.0",
+        "environment": settings.app.get("environment"),
+        "models_loaded": model_info.get("loaded_models") 
+                          or model_info.get("loaded_SContinuemodels", []),   # FIXED
+        "features": {
+            "predictions": True,
+            "inventory_optimization": True,
+            "vehicle_routing": True,
+            "parallel_processing": True
+        }
+    }
+
+
+@app.get("/health", tags=["Health"])
+async def health_check():
+    prediction_service = get_prediction_service()
+
+    return {
+        "status": "healthy",
+        "models": prediction_service.get_model_info(),
+        "config": {
+            "parallel_workers": settings.optimization.get("parallel", {}).get("max_workers", 4),
+            "vehicle_capacity": settings.optimization.get("routing", {}).get("vehicle_capacity", 1000)
+        }
+    }
+
+# ==================== PREDICTIONS ====================
+
+@app.post("/api/v1/predict/supplier", tags=["Predictions"])
+async def predict_supplier_reliability(data: SupplierInput):
+    try:
+        prediction_service = get_prediction_service()
+        return prediction_service.predict_supplier_reliability(
+            lead_time=data.lead_time,
+            cost=data.cost,
+            past_orders=data.past_orders
+        )
+    except SupplyChainException as e:
+        raise HTTPException(status_code=400, detail=e.to_dict())
+    except Exception as e:
+        logger.error(f"Prediction error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/predict/inventory", tags=["Predictions"])
+async def forecast_inventory(steps: int = 5, confidence_level: float = 0.95):
+    try:
+        prediction_service = get_prediction_service()
+        return prediction_service.forecast_inventory(steps, confidence_level)
+    except Exception as e:
+        logger.error(f"Forecast error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/predict/shipment", tags=["Predictions"])
+async def predict_shipment_delay(data: ShipmentInput):
+    try:
+        prediction_service = get_prediction_service()
+        return prediction_service.predict_shipment_delay(
+            delivery_time=data.delivery_time,
+            quantity=data.quantity,
+            delay_time=data.delay_time
+        )
+    except Exception as e:
+        logger.error(f"Prediction error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== OPTIMIZATION ====================
+
+@app.post("/api/v1/optimize/inventory", tags=["Optimization"])
+async def optimize_inventory(data: InventoryOptimizationInput):
+    try:
+        optimizer = InventoryOptimizer()
+        policy = optimizer.optimize_inventory_policy(
+            annual_demand=data.annual_demand,
+            unit_cost=data.unit_cost,
+            demand_std=data.demand_std,
+            lead_time_days=data.lead_time_days
+        )
+
+        return {
+            "economic_order_quantity": policy.economic_order_quantity,
+            "reorder_point": policy.reorder_point,
+            "safety_stock": policy.safety_stock,
+            "average_inventory": policy.average_inventory,
+            "total_annual_cost": policy.total_annual_cost,
+            "service_level": policy.service_level,
+            "number_of_orders": policy.number_of_orders
+        }
+
+    except Exception as e:
+        logger.error(f"Inventory optimization error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/optimize/routing", tags=["Optimization"])
+async def optimize_vehicle_routes(data: RoutingInput):
+    try:
+        optimizer = VehicleRoutingOptimizer()
+
+        depot_dict = {
+            "lat": data.depot.lat,
+            "lon": data.depot.lon,
+            "name": data.depot.name,
+        }
+
+        customers = [
+            {
+                "lat": c.lat,
+                "lon": c.lon,
+                "name": c.name,
+                "demand": c.demand,
+            }
+            for c in data.customers
+        ]
+
+        return optimizer.optimize_routes(
+            depot=depot_dict,
+            customers=customers,
+            algorithm=data.algorithm
+        )
+
+    except Exception as e:
+        logger.error(f"Routing optimization error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== BATCH PROCESSING ====================
+
+@app.post("/api/v1/batch/suppliers", tags=["Batch Processing"])
+async def batch_evaluate_suppliers(suppliers: List[SupplierInput]):
+    try:
+        prediction_service = get_prediction_service()
+        parallel_optimizer = ParallelOptimizer(max_workers=4)
+
+        supplier_dicts = [s.dict() for s in suppliers]
+
+        results = parallel_optimizer.parallel_map(
+            lambda s: prediction_service.predict_supplier_reliability(
+                lead_time=s["lead_time"],
+                cost=s["cost"],
+                past_orders=s["past_orders"]
+            ),
+            supplier_dicts
+        )
+
+        return {
+            "total_suppliers": len(suppliers),
+            "results": results
+        }
+
+    except Exception as e:
+        logger.error(f"Batch evaluation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== MODEL MANAGEMENT ====================
+
+@app.get("/api/v1/models/info", tags=["Models"])
+async def get_models_info():
+    prediction_service = get_prediction_service()
+    return prediction_service.get_model_info()
+
+
+@app.post("/api/v1/models/reload", tags=["Models"])
+async def reload_models():
+    try:
+        prediction_service = get_prediction_service()
+        prediction_service.reload_models()
+        return {"status": "success", "message": "Models reloaded"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== MAIN ====================
 
 if __name__ == "__main__":
-    generate_report()
+    uvicorn.run(
+        "app_enhanced:app",
+        host=settings.server.host,
+        port=settings.server.port,
+        reload=settings.server.reload,
+        log_level="info"
+    )

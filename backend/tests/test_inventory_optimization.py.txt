@@ -1,0 +1,106 @@
+"""
+Tests for inventory optimization
+Integrates: Probability & Statistics - Testing optimization algorithms
+"""
+
+import pytest
+import numpy as np
+
+from src.optimization.inventory_optimizer import InventoryOptimizer, InventoryPolicy
+
+
+class TestInventoryOptimizer:
+    """Test suite for inventory optimization"""
+    
+    def test_eoq_calculation(self, inventory_optimizer):
+        """Test Economic Order Quantity calculation"""
+        eoq = inventory_optimizer.calculate_eoq(
+            annual_demand=10000,
+            unit_cost=25.0
+        )
+        
+        assert eoq > 0
+        assert isinstance(eoq, float)
+    
+    def test_eoq_with_custom_costs(self, inventory_optimizer):
+        """Test EOQ with custom ordering and holding costs"""
+        eoq = inventory_optimizer.calculate_eoq(
+            annual_demand=10000,
+            unit_cost=25.0,
+            ordering_cost=150.0,
+            holding_cost_rate=0.30
+        )
+        
+        assert eoq > 0
+    
+    def test_safety_stock_calculation(self, inventory_optimizer):
+        """Test safety stock calculation"""
+        safety_stock = inventory_optimizer.calculate_safety_stock(
+            demand_std=50.0,
+            lead_time_days=7
+        )
+        
+        assert safety_stock > 0
+        assert isinstance(safety_stock, float)
+    
+    def test_reorder_point_calculation(self, inventory_optimizer):
+        """Test reorder point calculation"""
+        rop = inventory_optimizer.calculate_reorder_point(
+            average_daily_demand=100.0,
+            lead_time_days=7,
+            safety_stock=50.0
+        )
+        
+        assert rop == (100.0 * 7) + 50.0
+    
+    def test_optimize_inventory_policy(self, inventory_optimizer, sample_inventory_data):
+        """Test complete inventory policy optimization"""
+        policy = inventory_optimizer.optimize_inventory_policy(**sample_inventory_data)
+        
+        assert isinstance(policy, InventoryPolicy)
+        assert policy.economic_order_quantity > 0
+        assert policy.reorder_point > 0
+        assert policy.safety_stock >= 0
+        assert policy.total_annual_cost > 0
+        assert 0 < policy.service_level <= 1
+    
+    def test_inventory_simulation(self, inventory_optimizer, sample_inventory_data):
+        """Test inventory system simulation"""
+        policy = inventory_optimizer.optimize_inventory_policy(**sample_inventory_data)
+        
+        # Generate random daily demands
+        daily_demands = np.random.normal(
+            loc=sample_inventory_data['annual_demand'] / 365,
+            scale=sample_inventory_data['demand_std'] / np.sqrt(365),
+            size=100
+        )
+        daily_demands = np.abs(daily_demands)  # Ensure positive
+        
+        result = inventory_optimizer.simulate_inventory_system(
+            policy=policy,
+            daily_demands=daily_demands.tolist(),
+            lead_time_days=sample_inventory_data['lead_time_days'],
+            initial_inventory=policy.economic_order_quantity
+        )
+        
+        assert 'inventory_levels' in result
+        assert 'average_inventory' in result
+        assert 'fill_rate' in result
+        assert 0 <= result['fill_rate'] <= 1
+    
+    def test_abc_analysis(self, inventory_optimizer):
+        """Test ABC analysis for inventory classification"""
+        items = [
+            {'name': 'Item A', 'annual_demand': 5000, 'unit_cost': 100},
+            {'name': 'Item B', 'annual_demand': 3000, 'unit_cost': 50},
+            {'name': 'Item C', 'annual_demand': 1000, 'unit_cost': 10},
+            {'name': 'Item D', 'annual_demand': 500, 'unit_cost': 5},
+        ]
+        
+        result = inventory_optimizer.abc_analysis(items)
+        
+        assert 'A' in result
+        assert 'B' in result
+        assert 'C' in result
+        assert 'summary' in result
+        assert result['summary']['total_items'] == 4

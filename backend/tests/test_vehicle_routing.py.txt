@@ -1,0 +1,103 @@
+"""
+Tests for vehicle routing optimization
+Integrates: Graph Theory - Testing VRP algorithms
+"""
+
+import pytest
+import numpy as np
+
+from src.optimization.vehicle_routing import VehicleRoutingOptimizer, Location
+
+
+class TestVehicleRoutingOptimizer:
+    """Test suite for vehicle routing"""
+    
+    def test_haversine_distance(self, routing_optimizer):
+        """Test haversine distance calculation"""
+        loc1 = Location(0, "A", 40.7128, -74.0060)
+        loc2 = Location(1, "B", 40.7589, -73.9851)
+        
+        distance = routing_optimizer.haversine_distance(loc1, loc2)
+        
+        assert distance > 0
+        assert isinstance(distance, float)
+    
+    def test_distance_matrix_symmetry(self, routing_optimizer, sample_locations):
+        """Test that distance matrix is symmetric"""
+        locations = [
+            Location(0, "Depot", sample_locations['depot']['lat'], 
+                    sample_locations['depot']['lon'])
+        ]
+        for i, c in enumerate(sample_locations['customers']):
+            locations.append(Location(i+1, c['name'], c['lat'], c['lon'], c['demand']))
+        
+        matrix = routing_optimizer.build_distance_matrix(locations)
+        
+        # Check symmetry
+        assert np.allclose(matrix, matrix.T)
+        
+        # Check diagonal is zero
+        assert np.allclose(np.diag(matrix), 0)
+    
+    def test_clarke_wright_optimization(self, routing_optimizer, sample_locations):
+        """Test Clarke-Wright algorithm"""
+        result = routing_optimizer.optimize_routes(
+            depot=sample_locations['depot'],
+            customers=sample_locations['customers'],
+            algorithm='clarke_wright'
+        )
+        
+        assert 'routes' in result
+        assert 'statistics' in result
+        assert len(result['routes']) > 0
+        assert result['statistics']['num_vehicles'] > 0
+        assert result['statistics']['total_distance'] > 0
+    
+    def test_nearest_neighbor_optimization(self, routing_optimizer, sample_locations):
+        """Test Nearest Neighbor algorithm"""
+        result = routing_optimizer.optimize_routes(
+            depot=sample_locations['depot'],
+            customers=sample_locations['customers'],
+            algorithm='nearest_neighbor'
+        )
+        
+        assert 'routes' in result
+        assert len(result['routes']) > 0
+    
+    def test_route_capacity_constraints(self, routing_optimizer):
+        """Test that routes respect capacity constraints"""
+        depot = {'lat': 40.7128, 'lon': -74.0060, 'name': 'Warehouse'}
+        customers = [
+            {'lat': 40.7589, 'lon': -73.9851, 'demand': 600, 'name': 'C1'},
+            {'lat': 40.7614, 'lon': -73.9776, 'demand': 600, 'name': 'C2'},
+        ]
+        
+        result = routing_optimizer.optimize_routes(
+            depot=depot,
+            customers=customers,
+            algorithm='clarke_wright'
+        )
+        
+        # Should create 2 routes since total demand (1200) > capacity (1000)
+        assert len(result['routes']) >= 2
+        
+        # Check each route respects capacity
+        for route in result['routes']:
+            assert route['total_demand'] <= routing_optimizer.vehicle_capacity
+    
+    def test_dijkstra_shortest_path(self, routing_optimizer):
+        """Test Dijkstra's shortest path algorithm"""
+        # Create simple distance matrix
+        matrix = np.array([
+            [0, 2, 4, 0],
+            [2, 0, 1, 7],
+            [4, 1, 0, 3],
+            [0, 7, 3, 0]
+        ])
+        
+        distance, path = routing_optimizer.dijkstra_shortest_path(matrix, 0, 3)
+        
+        assert distance > 0
+        assert len(path) > 0
+        assert path[0] == 0
+        assert path[-1] == 3

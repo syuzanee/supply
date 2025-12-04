@@ -1,0 +1,80 @@
+# Supply Chain Optimization Configuration
+# Integrates: Software Engineering - Configuration Management
+
+app:
+  name: "Supply Chain Optimization System"
+  version: "2.0.0"
+  environment: "development"  # development, staging, production
+  debug: true
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  reload: true
+  workers: 4
+
+database:
+  enabled: false  # Set to true when using database
+  url: "sqlite:///./supply_chain.db"
+  echo: false
+
+models:
+  directory: "models"
+  auto_load: true
+  models:
+    supplier:
+      file: "supplier_model.pkl"
+      type: "RandomForestClassifier"
+      features: ["lead_time", "cost", "past_orders"]
+    inventory:
+      file: "inventory_model.pkl"
+      type: "ARIMA"
+      order: [1, 1, 1]
+    shipment:
+      file: "shipment_model.pkl"
+      type: "LogisticRegression"
+      features: ["delivery_time", "quantity", "delay_time"]
+
+optimization:
+  # Graph Theory: Vehicle Routing Problem
+  routing:
+    algorithm: "clarke_wright"  # clarke_wright, genetic, simulated_annealing
+    max_vehicles: 10
+    vehicle_capacity: 1000
+    max_distance: 500
+  
+  # Probability & Statistics: Inventory Optimization
+  inventory:
+    service_level: 0.95
+    holding_cost_rate: 0.25
+    ordering_cost: 100
+    lead_time_std: 2
+  
+  # Parallel Programming: Optimization parallelization
+  parallel:
+    enabled: true
+    max_workers: 4
+    batch_size: 100
+
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/app.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+
+cache:
+  enabled: true
+  ttl: 3600  # seconds
+  max_size: 1000
+
+security:
+  cors_origins: ["http://localhost:3000", "http://localhost:5173"]
+  api_key_enabled: false
+  rate_limit: 100  # requests per minute
+
+features:
+  report_generation: true
+  real_time_optimization: true
+  batch_processing: true
+  notifications: false

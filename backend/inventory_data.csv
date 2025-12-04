@@ -1,0 +1,6 @@
+item_id,stock_level,demand_rate,lead_time
+1,100,20,5
+2,150,30,7
+3,80,15,6
+4,200,40,8
+5,50,10,4
