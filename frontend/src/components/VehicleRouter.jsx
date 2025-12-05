@@ -1,45 +1,28 @@
-// frontend/src/components/VehicleRouter.jsx
 import { useState } from 'react';
 import api from '../services/api';
 import './VehicleRouter.css';
 
 function VehicleRouter() {
-  const [locations, setLocations] = useState([
-    { id: 1, lat: 40.7128, lon: -74.0060, name: 'New York' },
-    { id: 2, lat: 34.0522, lon: -118.2437, name: 'Los Angeles' },
-    { id: 3, lat: 41.8781, lon: -87.6298, name: 'Chicago' }
+  const [depot, setDepot] = useState({ lat: 40.7128, lon: -74.0060, name: 'Warehouse' });
+  const [customers, setCustomers] = useState([
+    { lat: 40.7589, lon: -73.9851, demand: 100, name: 'Customer 1' },
+    { lat: 40.7614, lon: -73.9776, demand: 150, name: 'Customer 2' },
+    { lat: 40.7489, lon: -73.9680, demand: 200, name: 'Customer 3' }
   ]);
-
-  const [newLocation, setNewLocation] = useState({ lat: '', lon: '', name: '' });
+  const [newCustomer, setNewCustomer] = useState({
+    lat: '',
+    lon: '',
+    demand: '',
+    name: ''
+  });
+  const [algorithm, setAlgorithm] = useState('clarke_wright');
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Add a new location to the list
-  const addLocation = () => {
-    if (!newLocation.lat || !newLocation.lon || !newLocation.name) return;
-
-    setLocations([
-      ...locations,
-      {
-        id: Date.now(),
-        lat: parseFloat(newLocation.lat),
-        lon: parseFloat(newLocation.lon),
-        name: newLocation.name
-      }
-    ]);
-    setNewLocation({ lat: '', lon: '', name: '' });
-  };
-
-  // Remove a location
-  const removeLocation = (id) => {
-    setLocations(locations.filter(loc => loc.id !== id));
-  };
-
-  // Optimize route using backend API
   const handleOptimize = async () => {
-    if (locations.length < 2) {
-      setError('Please add at least 2 locations');
+    if (customers.length === 0) {
+      setError('Please add at least one customer location');
       return;
     }
 
@@ -47,105 +30,189 @@ function VehicleRouter() {
     setError(null);
 
     try {
-      // Prepare payload with all necessary fields
-      const routeData = {
-        locations: locations.map(loc => ({
-          id: loc.id,
-          name: loc.name,
-          lat: loc.lat,
-          lon: loc.lon
+      // Format data correctly for the API
+      const data = {
+        depot: {
+          lat: parseFloat(depot.lat),
+          lon: parseFloat(depot.lon),
+          name: depot.name
+        },
+        customers: customers.map(c => ({
+          lat: parseFloat(c.lat),
+          lon: parseFloat(c.lon),
+          demand: parseFloat(c.demand),
+          name: c.name
         })),
-        start_index: 0
+        algorithm: algorithm
       };
 
-      console.log('Sending routing data:', JSON.stringify(routeData, null, 2));
-
-      const optimization = await api.optimizeRouting(routeData);
-
-      // Map route_order indices to location objects
-      if (optimization.route_order && Array.isArray(optimization.route_order)) {
-        optimization.route_order = optimization.route_order.map(index => locations.find(loc => loc.id === index) || {});
-      }
-
+      console.log('Sending routing data:', data);
+      
+      const optimization = await api.optimizeRouting(data);
       setResult(optimization);
     } catch (err) {
-      console.error('Full error:', err);
-
-      let errorMessage = 'An unknown error occurred';
-
-      // Handle structured backend error with `detail`
-      if (err?.detail) {
-        if (Array.isArray(err.detail)) {
-          errorMessage = err.detail
-            .map(e => `${(e.loc || []).join('.')} - ${e.msg || 'Unknown error'}`)
-            .join('\n');
-        } else {
-          errorMessage = err.detail;
-        }
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
-
-      setError(errorMessage);
+      console.error('Routing error:', err);
+      setError(err.message || 'Failed to optimize routes');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleAddCustomer = () => {
+    if (!newCustomer.lat || !newCustomer.lon || !newCustomer.demand || !newCustomer.name) {
+      alert('Please fill all customer fields');
+      return;
+    }
+
+    setCustomers([...customers, {
+      lat: parseFloat(newCustomer.lat),
+      lon: parseFloat(newCustomer.lon),
+      demand: parseFloat(newCustomer.demand),
+      name: newCustomer.name
+    }]);
+
+    // Reset form
+    setNewCustomer({ lat: '', lon: '', demand: '', name: '' });
+  };
+
+  const handleRemoveCustomer = (index) => {
+    setCustomers(customers.filter((_, i) => i !== index));
+    setResult(null); // Clear results when removing customers
+  };
+
+  const handleDepotChange = (field, value) => {
+    setDepot({ ...depot, [field]: value });
+    setResult(null); // Clear results when changing depot
+  };
+
+  const handleNewCustomerChange = (field, value) => {
+    setNewCustomer({ ...newCustomer, [field]: value });
+  };
+
   return (
     <div className="router-container">
       <div className="router-header">
-        <h2>🗺️ Vehicle Route Optimization</h2>
-        <p>Find optimal delivery routes using Traveling Salesman Problem (TSP)</p>
+        <h2>🗺️ Vehicle Routing Optimizer</h2>
+        <p>Optimize delivery routes using Graph Theory algorithms (Clarke-Wright or Nearest Neighbor)</p>
       </div>
 
       <div className="router-content">
-        {/* Location Input */}
+        {/* Input Section */}
         <div className="input-section">
-          <h3>Delivery Locations</h3>
-          <div className="location-input">
-            <input
-              type="number"
-              placeholder="Latitude"
-              value={newLocation.lat}
-              onChange={e => setNewLocation({ ...newLocation, lat: e.target.value })}
-              step="0.0001"
-            />
-            <input
-              type="number"
-              placeholder="Longitude"
-              value={newLocation.lon}
-              onChange={e => setNewLocation({ ...newLocation, lon: e.target.value })}
-              step="0.0001"
-            />
-            <input
-              type="text"
-              placeholder="Location Name"
-              value={newLocation.name}
-              onChange={e => setNewLocation({ ...newLocation, name: e.target.value })}
-            />
-            <button onClick={addLocation} className="btn-add">➕ Add</button>
+          <h3>Route Configuration</h3>
+          
+          {/* Algorithm Selector */}
+          <div className="form-group">
+            <label>Algorithm:</label>
+            <select 
+              value={algorithm} 
+              onChange={(e) => setAlgorithm(e.target.value)}
+              className="algorithm-select"
+            >
+              <option value="clarke_wright">Clarke-Wright Savings</option>
+              <option value="nearest_neighbor">Nearest Neighbor</option>
+            </select>
           </div>
 
-          <div className="locations-list">
-            {locations.map((loc, index) => (
-              <div key={loc.id} className="location-item">
-                <span className="location-number">{index + 1}</span>
-                <div className="location-info">
-                  <strong>{loc.name}</strong>
-                  <small>({loc.lat?.toFixed(4) ?? 'N/A'}, {loc.lon?.toFixed(4) ?? 'N/A'})</small>
-                </div>
-                <button onClick={() => removeLocation(loc.id)} className="btn-remove">✕</button>
+          {/* Depot Configuration */}
+          <div className="depot-section">
+            <h4>📍 Depot Location</h4>
+            <div className="depot-inputs">
+              <input
+                type="text"
+                placeholder="Name"
+                value={depot.name}
+                onChange={(e) => handleDepotChange('name', e.target.value)}
+              />
+              <input
+                type="number"
+                placeholder="Latitude"
+                value={depot.lat}
+                onChange={(e) => handleDepotChange('lat', e.target.value)}
+                step="0.0001"
+              />
+              <input
+                type="number"
+                placeholder="Longitude"
+                value={depot.lon}
+                onChange={(e) => handleDepotChange('lon', e.target.value)}
+                step="0.0001"
+              />
+            </div>
+          </div>
+
+          {/* Add Customer */}
+          <div className="customer-section">
+            <h4>➕ Add Customer</h4>
+            <div className="customer-inputs">
+              <input
+                type="text"
+                placeholder="Name"
+                value={newCustomer.name}
+                onChange={(e) => handleNewCustomerChange('name', e.target.value)}
+              />
+              <input
+                type="number"
+                placeholder="Latitude"
+                value={newCustomer.lat}
+                onChange={(e) => handleNewCustomerChange('lat', e.target.value)}
+                step="0.0001"
+              />
+              <input
+                type="number"
+                placeholder="Longitude"
+                value={newCustomer.lon}
+                onChange={(e) => handleNewCustomerChange('lon', e.target.value)}
+                step="0.0001"
+              />
+              <input
+                type="number"
+                placeholder="Demand"
+                value={newCustomer.demand}
+                onChange={(e) => handleNewCustomerChange('demand', e.target.value)}
+              />
+              <button onClick={handleAddCustomer} className="btn-add">
+                Add
+              </button>
+            </div>
+          </div>
+
+          {/* Customers List */}
+          <div className="customers-list">
+            <h4>📦 Customers ({customers.length})</h4>
+            {customers.length === 0 ? (
+              <p className="empty-message">No customers added yet</p>
+            ) : (
+              <div className="locations-list">
+                {customers.map((customer, index) => (
+                  <div key={index} className="location-item">
+                    <div className="location-number">{index + 1}</div>
+                    <div className="location-info">
+                      <strong>{customer.name}</strong>
+                      <small>
+                        Lat: {customer.lat.toFixed(4)}, Lon: {customer.lon.toFixed(4)} | 
+                        Demand: {customer.demand}
+                      </small>
+                    </div>
+                    <button 
+                      onClick={() => handleRemoveCustomer(index)}
+                      className="btn-remove"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
 
-          <button
-            onClick={handleOptimize}
-            disabled={loading || locations.length < 2}
+          {/* Optimize Button */}
+          <button 
+            onClick={handleOptimize} 
+            disabled={loading || customers.length === 0}
             className="btn-primary"
           >
-            {loading ? '⏳ Optimizing...' : '🚀 Optimize Route'}
+            {loading ? '⏳ Optimizing...' : '🚀 Optimize Routes'}
           </button>
         </div>
 
@@ -154,87 +221,112 @@ function VehicleRouter() {
           {loading && (
             <div className="loading-state">
               <div className="spinner"></div>
-              <p>Calculating optimal route...</p>
+              <p>Calculating optimal routes...</p>
             </div>
           )}
 
           {error && (
             <div className="error-state">
               <h3>❌ Error</h3>
-              <pre style={{ whiteSpace: 'pre-wrap', textAlign: 'left' }}>{error}</pre>
+              <p>{error}</p>
             </div>
           )}
 
           {result && !loading && (
             <div className="result-card">
-              <h3>Optimal Route Found</h3>
-
+              <h3>Optimization Results</h3>
+              
+              {/* Summary Statistics */}
               <div className="route-summary">
+                <div className="summary-card">
+                  <div className="summary-icon">🚚</div>
+                  <div className="summary-content">
+                    <h4>{result.statistics?.num_vehicles || 0}</h4>
+                    <p>Vehicles Needed</p>
+                  </div>
+                </div>
+
                 <div className="summary-card">
                   <div className="summary-icon">📏</div>
                   <div className="summary-content">
-                    <h4>{(result.total_distance ?? 0).toFixed(2)} km</h4>
+                    <h4>{result.statistics?.total_distance?.toFixed(2) || 0} km</h4>
                     <p>Total Distance</p>
                   </div>
                 </div>
+
                 <div className="summary-card">
-                  <div className="summary-icon">📍</div>
+                  <div className="summary-icon">📊</div>
                   <div className="summary-content">
-                    <h4>{result.route_order?.length ?? 0}</h4>
-                    <p>Stops</p>
-                  </div>
-                </div>
-                <div className="summary-card">
-                  <div className="summary-icon">🎯</div>
-                  <div className="summary-content">
-                    <h4>{result.algorithm ?? 'N/A'}</h4>
-                    <p>Algorithm</p>
+                    <h4>{result.statistics?.avg_distance_per_route?.toFixed(2) || 0} km</h4>
+                    <p>Avg per Route</p>
                   </div>
                 </div>
               </div>
 
-              <div className="route-visualization">
-                <h4>Route Order</h4>
-                <div className="route-path">
-                  {result.route_order?.length ? (
-                    result.route_order.map((stop, index) => (
-                      <div key={index} className="route-stop">
-                        <div className="stop-marker">{index + 1}</div>
-                        <div className="stop-info">
-                          <strong>{stop.name}</strong>
-                          <small>({stop.lat?.toFixed(4) ?? 'N/A'}, {stop.lon?.toFixed(4) ?? 'N/A'})</small>
+              {/* Routes Visualization */}
+              {result.routes && result.routes.length > 0 && (
+                <div className="routes-container">
+                  <h4>🗺️ Optimized Routes</h4>
+                  {result.routes.map((route, routeIndex) => (
+                    <div key={routeIndex} className="route-card">
+                      <div className="route-header">
+                        <h5>Vehicle {route.vehicle_id + 1}</h5>
+                        <div className="route-stats">
+                          <span className="stat-badge">
+                            📏 {route.total_distance?.toFixed(2) || 0} km
+                          </span>
+                          <span className="stat-badge">
+                            📦 {route.total_demand?.toFixed(0) || 0} units
+                          </span>
                         </div>
-                        {index < result.route_order.length - 1 && <div className="route-arrow">→</div>}
                       </div>
-                    ))
-                  ) : (
-                    <p>No route order available</p>
-                  )}
-                </div>
-              </div>
 
-              {result.segment_distances?.length && (
-                <div className="segment-details">
-                  <h4>Segment Distances</h4>
-                  <div className="segments-list">
-                    {result.segment_distances.map((segment, index) => (
-                      <div key={index} className="segment-item">
-                        <span className="segment-route">
-                          {result.route_order?.[index]?.name ?? 'N/A'} → {result.route_order?.[index + 1]?.name ?? 'N/A'}
-                        </span>
-                        <span className="segment-distance">{(segment ?? 0).toFixed(2)} km</span>
+                      <div className="route-path">
+                        {route.locations && route.locations.map((location, locIndex) => (
+                          <div key={locIndex}>
+                            <div className="route-stop">
+                              <div className="stop-marker">
+                                {locIndex === 0 || locIndex === route.locations.length - 1 
+                                  ? '🏭' 
+                                  : locIndex
+                                }
+                              </div>
+                              <div className="stop-info">
+                                <strong>{location.name}</strong>
+                                <small>
+                                  Lat: {location.lat?.toFixed(4)}, Lon: {location.lon?.toFixed(4)}
+                                </small>
+                              </div>
+                            </div>
+                            {locIndex < route.locations.length - 1 && (
+                              <div className="route-arrow">↓</div>
+                            )}
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  ))}
                 </div>
               )}
+
+              {/* Algorithm Info */}
+              <div className="algorithm-info">
+                <h4>ℹ️ Algorithm Used</h4>
+                <p>
+                  <strong>{result.algorithm === 'clarke_wright' ? 'Clarke-Wright Savings' : 'Nearest Neighbor'}</strong>
+                  {result.algorithm === 'clarke_wright' 
+                    ? ' - A greedy algorithm that merges routes based on savings in distance'
+                    : ' - A constructive heuristic that builds routes by adding nearest unvisited customers'
+                  }
+                </p>
+              </div>
             </div>
           )}
 
           {!result && !loading && !error && (
             <div className="empty-state">
               <div className="empty-icon">🗺️</div>
-              <p>Add locations and click "Optimize Route" to find the best path</p>
+              <p>Add customers and click "Optimize Routes" to see results</p>
             </div>
           )}
         </div>

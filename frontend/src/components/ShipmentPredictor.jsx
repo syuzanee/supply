@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import api from '../services/api';
+import './ShipmentPredictor.css';
 
 function ShipmentPredictor() {
   const [formData, setFormData] = useState({
@@ -38,6 +39,14 @@ function ShipmentPredictor() {
       'High': '#ef4444'
     };
     return colors[riskLevel] || '#6b7280';
+  };
+
+  const getStatusClass = (status) => {
+    if (!status) return '';
+    const statusLower = status.toLowerCase();
+    if (statusLower.includes('on time')) return 'on-time';
+    if (statusLower.includes('delay')) return 'likely-delay';
+    return 'high-risk';
   };
 
   return (
@@ -94,22 +103,32 @@ function ShipmentPredictor() {
         </div>
 
         <div className="results-section">
-          {loading && <div className="spinner"></div>}
-          {error && <div className="error-state">{error}</div>}
+          {loading && (
+            <div className="loading-state">
+              <div className="spinner"></div>
+              <p>Analyzing shipment data...</p>
+            </div>
+          )}
+
+          {error && (
+            <div className="error-state">
+              <h3>❌ Error</h3>
+              <p>{error}</p>
+            </div>
+          )}
 
           {result && !loading && (
             <div className="result-card">
               <h3>Prediction Results</h3>
               
-
-              <div className={`status-badge ${result.status.toLowerCase().replace(' ', '-')}`}>
+              <div className={`status-badge ${getStatusClass(result.status)}`}>
                 <div className="badge-icon">
                   {result.will_delay ? '⚠️' : '✅'}
                 </div>
                 <div className="badge-content">
-                  <h4>{result.status}</h4>
-                  <p style={{ color: getRiskColor(result.risk_level) }}>
-                    Risk Level: {result.risk_level}
+                  <h4>{result.status || 'Status Unknown'}</h4>
+                  <p style={{ color: 'rgba(255, 255, 255, 0.95)' }}>
+                    Risk Level: {result.risk_level || 'Unknown'}
                   </p>
                 </div>
               </div>
@@ -120,12 +139,12 @@ function ShipmentPredictor() {
                   <div 
                     className="probability-fill"
                     style={{ 
-                      width: `${result.delay_probability * 100}%`,
+                      width: `${(result.delay_probability || 0) * 100}%`,
                       backgroundColor: getRiskColor(result.risk_level)
                     }}
                   >
                     <span className="probability-text">
-                      {(result.delay_probability * 100).toFixed(1)}%
+                      {((result.delay_probability || 0) * 100).toFixed(1)}%
                     </span>
                   </div>
                 </div>
@@ -136,31 +155,48 @@ function ShipmentPredictor() {
                 <div className="details-grid">
                   <div className="detail-item">
                     <span className="detail-label">Expected Delivery:</span>
-                    <span className="detail-value">{result.input.delivery_time} days</span>
+                    <span className="detail-value">
+                      {result.input?.delivery_time || formData.delivery_time} days
+                    </span>
                   </div>
                   <div className="detail-item">
                     <span className="detail-label">Quantity:</span>
-                    <span className="detail-value">{result.input.quantity} units</span>
+                    <span className="detail-value">
+                      {result.input?.quantity || formData.quantity} units
+                    </span>
                   </div>
                   <div className="detail-item">
                     <span className="detail-label">Historical Delay:</span>
-                    <span className="detail-value">{result.input.delay_time} days</span>
+                    <span className="detail-value">
+                      {result.input?.delay_time || formData.delay_time} days
+                    </span>
                   </div>
                   <div className="detail-item">
                     <span className="detail-label">Model:</span>
-                    <span className="detail-value">{result.model}</span>
+                    <span className="detail-value">{result.model || 'Logistic Regression'}</span>
                   </div>
                 </div>
               </div>
 
               <div className="recommendation">
                 <h4>💡 Recommendations</h4>
-                {result.recommendations.map((rec, index) => (
-                  <div key={index} className="recommendation-item">
+                {result.recommendations && result.recommendations.length > 0 ? (
+                  result.recommendations.map((rec, index) => (
+                    <div key={index} className="recommendation-item">
+                      <span className="rec-icon">•</span>
+                      <span>{rec}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="recommendation-item">
                     <span className="rec-icon">•</span>
-                    <span>{rec}</span>
+                    <span>
+                      {result.will_delay 
+                        ? 'Consider expedited shipping options or contact the supplier for updates.'
+                        : 'Shipment is expected to arrive on time. Continue monitoring.'}
+                    </span>
                   </div>
-                ))}
+                )}
               </div>
             </div>
           )}
